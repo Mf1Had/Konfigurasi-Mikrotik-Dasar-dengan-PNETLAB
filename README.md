@@ -1,18 +1,18 @@
-# Konfigurasi Dasar MikroTik RouterOS (Studi Kasus Jaringan Kantor & Simulasi ISP)
+# Konfigurasi Dasar MikroTik RouterOS (Studi Kasus ISP Dedicated / Enterprise)
 
-Dokumentasi praktik laboratorium jaringan komputer menggunakan **PNETLab** dan **Winbox** untuk menerapkan konfigurasi dasar **MikroTik RouterOS**. Skenario lab ini mensimulasikan topologi jaringan kantor yang terhubung ke router ISP hingga mendistribusikan koneksi internet ke perangkat klien (PC).
+Dokumentasi praktik laboratorium jaringan komputer menggunakan **PNETLab** dan **Winbox** untuk menerapkan konfigurasi dasar **MikroTik RouterOS** dengan skenario layanan **ISP Dedicated / Enterprise** (IP Public Statis, Default Route Manual, dan DNS Manual).
 
 ---
 
 ## 1. Topologi Jaringan
 
-![Topologi Jaringan](<Topologi Jaringan.png>)
+![Topologi Jaringan](Topologi-Jaringan.png)
 
 ### Skema Koneksi Interface
-* **`ISP (Cloud0)`** $\leftrightarrow$ **`eth1` Router-ISP**: Jalur sumber internet asli dan akses remote Winbox `Router-ISP`.
-* **`ISP (Cloud0)`** $\leftrightarrow$ **`eth1` Router-Kantor**: Jalur khusus *Out-of-Band Management* untuk remote Winbox `Router-Kantor`.
-* **`eth2` Router-ISP** $\leftrightarrow$ **`eth2` Router-Kantor**: Jalur WAN kantor (mendapatkan IP dinamis segmen `192.168.1.0/24`).
-* **`eth3` Router-Kantor** $\leftrightarrow$ **`eth0` VPC**: Jalur jaringan lokal (LAN) kantor menuju klien (segmen `192.168.50.0/24`).
+* **`Console Host` (`Cloud0`)** $\leftrightarrow$ **`eth1` Router ISP (Dedicated)**: Jalur khusus *Out-of-Band Management* untuk remote Winbox `Router ISP`.
+* **`Console Host` (`Cloud0`)** $\leftrightarrow$ **`eth1` Router Kantor**: Jalur khusus *Out-of-Band Management* untuk remote Winbox `Router Kantor`.
+* **`eth2` Router ISP (Dedicated)** $\leftrightarrow$ **`eth2` Router Kantor**: Jalur WAN Dedicated Point-to-Point (`100.100.100.0/24`).
+* **`eth3` Router Kantor** $\leftrightarrow$ **`eth0` VPC**: Jalur jaringan lokal (LAN) kantor menuju perangkat klien (`192.168.50.0/24`).
 
 ---
 
@@ -20,91 +20,80 @@ Dokumentasi praktik laboratorium jaringan komputer menggunakan **PNETLab** dan *
 
 | Perangkat | Interface | Peran / Koneksi | IP Address | Metode Konfigurasi |
 | :--- | :--- | :--- | :--- | :--- |
-| **Router-ISP** | `eth1` | WAN (ke Cloud0 / Internet) | `192.168.100.x/24` | DHCP Client |
-| **Router-ISP** | `eth2` | LAN ISP (ke Router-Kantor) | `192.168.1.1/24` | Static + DHCP Server |
-| **Router-Kantor** | `eth1` | Management (Winbox) | `192.168.100.x/24` | DHCP Client (`Distance: 2`) |
-| **Router-Kantor** | `eth2` | WAN (ke Router-ISP) | `192.168.1.x/24` | DHCP Client (`Distance: 1`) |
-| **Router-Kantor** | `eth3` | LAN Kantor (ke VPC) | `192.168.50.1/24` | Static + DHCP Server |
-| **PC-Client (VPC)** | `eth0` | End-User Client | `192.168.50.x/24` | DHCP Client (`ip dhcp`) |
+| **Router ISP (Dedicated)** | `ether1` (`eth1`) | Management (Console Host / Winbox) | `192.168.200.11/24` | Static |
+| **Router ISP (Dedicated)** | `ether2` (`eth2`) | Gateway WAN Dedicated | `100.100.100.1/24` | Static |
+| **Router ISP (Dedicated)** | `loopback-internet` | Simulasi Target Internet Publik | `8.8.8.8/32` | Static (Bridge Loopback) |
+| **Router Kantor** | `ether1` (`eth1`) | Management (Console Host / Winbox) | `192.168.200.12/24` | Static (Tanpa Default Route) |
+| **Router Kantor** | `ether2` (`eth2`) | WAN Public Statis (ke Router ISP) | `100.100.100.2/24` | Static Manual |
+| **Router Kantor** | `ether3` (`eth3`) | LAN Kantor (ke VPC) | `192.168.50.1/24` | Static + DHCP Server |
+| **VPC** | `eth0` | End-User Client | `192.168.50.x/24` | DHCP Client (`ip dhcp`) |
 
 ---
 
-## 3. Tahapan Konfigurasi `Router-ISP`
+## 3. Tahapan Konfigurasi `Router ISP (Dedicated)`
 
-`Router-ISP` berperan sebagai modem/router dari penyedia layanan internet yang membagikan IP publik/WAN (`192.168.1.0/24`) ke router kantor.
+`Router ISP (Dedicated)` berperan sebagai penyedia layanan internet enterprise yang memberikan blok IP Public statis dan mensimulasikan server target internet (`8.8.8.8/32`).
 
-### A. Konfigurasi IP Address (`eth2`)
-Menambahkan IP Gateway pada interface `eth2` yang mengarah ke `Router-Kantor`:
-* **Menu Winbox:** `IP` $\rightarrow$ `Addresses` $\rightarrow$ `+`
-* **Address:** `192.168.1.1/24` | **Interface:** `eth2`
+### A. Konfigurasi IP Address & Bridge Loopback
+1. **Management (`ether1`):** `192.168.200.11/24` (akses remote Winbox).
+2. **Gateway WAN (`ether2`):** `100.100.100.1/24` (mengarah ke `Router Kantor`).
+3. **Simulasi Internet (`loopback-internet`):** Membuat interface *Bridge* bernama `loopback-internet` dan memasang IP `8.8.8.8/32`.
 
-![Address List Router ISP](<Address List Router ISP.png>)
-
-### B. Konfigurasi DHCP Server (`eth2`)
-Membagikan alamat IP secara otomatis ke `Router-Kantor`:
-* **Menu Winbox:** `IP` $\rightarrow$ `DHCP Server` $\rightarrow$ `DHCP Setup`
-* **DHCP Server Interface:** `eth2` (ikuti wizard hingga selesai dengan rentang `192.168.1.2-192.168.1.254`).
-
-![DHCP Server Router ISP](<DHCP Server Router ISP.png>)
-
-### C. Konfigurasi Firewall NAT (`Masquerade`)
-Menerjemahkan jaringan lokal ISP agar dapat diteruskan ke internet melalui `eth1`:
-* **Menu Winbox:** `IP` $\rightarrow$ `Firewall` $\rightarrow$ tab `NAT` $\rightarrow$ `+`
-* **Chain:** `srcnat` | **Out. Interface:** `eth1` | **Action:** `masquerade`
-
-![Firewall NAT Router ISP](<Firewall NAT Router ISP.png>)
+![Address List Router ISP](Address-List-Router-ISP.png)
 
 ---
 
-## 4. Tahapan Konfigurasi `Router-Kantor`
+## 4. Tahapan Konfigurasi `Router Kantor` (Studi Kasus Utama)
 
-`Router-Kantor` (simulasi perangkat MikroTik RB941-2nD) menerima koneksi internet dari `Router-ISP` dan mendistribusikannya ke jaringan lokal kantor.
+Karena menggunakan layanan **ISP Dedicated / Enterprise**, konfigurasi WAN pada `Router Kantor` dilakukan sepenuhnya secara **manual** tanpa menggunakan DHCP Client pada interface WAN (`ether2`).
 
-### A. Konfigurasi DHCP Client (`eth1` & `eth2`)
-* **`eth2` (WAN Utama):** Mengambil IP dari `Router-ISP` (`192.168.1.x`) dengan `Default Route Distance = 1`.
-* **`eth1` (Management):** Mengambil IP dari `Cloud0` untuk akses Winbox dengan `Default Route Distance = 2` agar trafik internet tetap melewati `Router-ISP`.
+### A. Konfigurasi IP Address Public & LAN (`IP` $\rightarrow$ `Addresses`)
+* **`ether1` (Management):** `192.168.200.12/24`
+* **`ether2` (WAN Public Manual):** `100.100.100.2/24`
+* **`ether3` (LAN Lokal):** `192.168.50.1/24`
 
-![DHCP Client Router Kantor](<DHCP Client Router Kantor.png>)
+![Address List Router Kantor](Address-List-Router-kantor.png)
 
-### B. Konfigurasi IP Address Lokal (`eth3`)
-Menambahkan IP Gateway untuk jaringan lokal kantor pada interface `eth3`:
-* **Menu Winbox:** `IP` $\rightarrow$ `Addresses` $\rightarrow$ `+`
-* **Address:** `192.168.50.1/24` | **Interface:** `eth3`
+### B. Konfigurasi Default Route Manual (`IP` $\rightarrow$ `Routes`)
+Mengarahkan seluruh trafik menuju internet melewati Gateway IP Public milik ISP:
+* **Dst. Address:** `0.0.0.0/0`
+* **Gateway:** `100.100.100.1` (Status aktif **AS** — *Active, Static*)
 
-![Address List Router Kantor](<Address List Router Kantor.png>)
+![Route List Router Kantor](Route-List-Router-Kantor.png)
 
-### C. Konfigurasi DHCP Server Lokal (`eth3`)
-Membagikan alamat IP otomatis kepada perangkat klien (`VPC`):
-* **Menu Winbox:** `IP` $\rightarrow$ `DHCP Server` $\rightarrow$ `DHCP Setup`
-* **DHCP Server Interface:** `eth3` (rentang IP `192.168.50.2-192.168.50.254`).
+### C. Konfigurasi DNS Server Manual (`IP` $\rightarrow$ `DNS`)
+Memasukkan alamat server DNS secara manual agar router dan klien dapat menerjemahkan nama domain:
+* **Servers:** `8.8.8.8`
+* **Allow Remote Requests:** Dicentang (`yes`)
 
-![DHCP Server Router Kantor](<DHCP Server Router Kantor.png>)
+![DNS Router Kantor](DNS-Router-Kantor.png)
 
-### D. Konfigurasi Firewall NAT (`Masquerade`)
-Menerjemahkan segmen IP lokal kantor (`192.168.50.0/24`) menuju interface WAN `eth2`:
-* **Menu Winbox:** `IP` $\rightarrow$ `Firewall` $\rightarrow$ tab `NAT` $\rightarrow$ `+`
-* **Chain:** `srcnat` | **Out. Interface:** `eth2` | **Action:** `masquerade`
-
-![Firewall NAT Router Kantor](<Firewall NAT Router Kantor.png>)
+### D. Konfigurasi DHCP Server & Firewall NAT (`Masquerade`)
+1. **DHCP Server (`ether3`):** Dijalankan melalui wizard `DHCP Setup` pada interface `ether3` untuk membagikan IP otomatis rentang `192.168.50.2-192.168.50.254` ke klien.
+2. **Firewall NAT (`IP` $\rightarrow$ `Firewall` $\rightarrow$ `NAT`):**
+   * **Chain:** `srcnat` | **Out. Interface:** `ether2` | **Action:** `masquerade`
 
 ---
 
-## 5. Pengujian & Verifikasi (`PC-Client / VPC`)
+## 5. Pengujian & Verifikasi
 
-Pengujian dilakukan dari konsol **VPC** dengan meminta IP otomatis (`ip dhcp`) dan melakukan uji koneksi berjenjang (*ping*):
-1. `ping 192.168.50.1` $\rightarrow$ Menguji koneksi ke Gateway `Router-Kantor` (**Berhasil**).
-2. `ping 192.168.1.1` $\rightarrow$ Menguji koneksi melintasi router menuju Gateway `Router-ISP` (**Berhasil**).
-3. `ping google.com` $\rightarrow$ Menguji resolusi DNS dan koneksi ke internet (**Berhasil**).
+### A. Pengujian Konektivitas dari Terminal `Router Kantor`
+Melakukan uji *ping* dari **New Terminal** Winbox `Router Kantor` menuju Gateway ISP (`100.100.100.1`) dan simulasi server internet (`8.8.8.8`):
 
-![Testing Ping Client (VPC)](<Testing Ping Client (VPC).png>)
+![Ping Test Router Kantor](Ping-Test-Router-Kantor.png)
+
+### B. Pengujian Konektivitas dari Sisi Klien (`VPC`)
+Meminta IP otomatis melalui perintah `ip dhcp` pada konsol **VPC**, kemudian menguji koneksi ke seluruh titik jaringan:
+1. `ping 192.168.50.1` $\rightarrow$ Koneksi ke Gateway LAN `Router Kantor` (**Berhasil**).
+2. `ping 100.100.100.1` $\rightarrow$ Koneksi melintasi WAN menuju Gateway `Router ISP` (**Berhasil**).
+3. `ping 8.8.8.8` $\rightarrow$ Koneksi menuju jaringan publik melalui translasi NAT (**Berhasil**).
+
+![Ping Test VPC](Ping-Test-VPC.png)
 
 ---
 
 ## 6. Catatan Troubleshooting Selama Praktikum
 
-1. **Konflik Subnet antara Management (`eth1`) dan LAN (`eth3`):**
-   * *Masalah:* Awalnya `eth3` dikonfigurasi dengan `192.168.100.1/24`, yang ternyata bentrok dengan subnet `Cloud0` pada `eth1` (`192.168.100.0/24`), menyebabkan munculnya flag `DAC+` pada tabel *routing* dan paket tidak melewati `Router-ISP`.
-   * *Solusi:* Mengubah segmen LAN `eth3` menjadi `192.168.50.1/24` agar seluruh interface memiliki subnet yang unik sehingga *routing* berjalan normal.
-2. **Prioritas Default Route:**
-   * *Masalah:* Jalur internet memotong (*bypass*) langsung lewat interface management `eth1`.
-   * *Solusi:* Menaikkan nilai `Default Route Distance` pada DHCP Client `eth1` menjadi `2`, sehingga jalur utama tetap melewati `eth2` (`Router-ISP`) dengan `Distance = 1`.
+* **Konflik Dual Default Route (`DAd` vs `AS+`):**
+  * *Masalah:* Saat pertama kali menguji `ping 8.8.8.8` dari `Router Kantor`, paket berhasil mencapai `100.100.100.1` tetapi gagal mencapai `8.8.8.8` karena masih terdapat rute default dinamis (`DAd 0.0.0.0/0 -> 192.168.200.2`) dari DHCP Client jalur manajemen `ether1` yang memiliki `Distance = 1` sama seperti rute statis.
+  * *Solusi:* Menonaktifkan opsi `Add Default Route` (mengubah ke `no`) pada DHCP Client `ether1` sehingga rute statis `AS 0.0.0.0/0 -> 100.100.100.1` menjadi satu-satunya jalur keluar utama yang aktif.
